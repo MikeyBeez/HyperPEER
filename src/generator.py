@@ -149,11 +149,12 @@ class GeneratedFFN(nn.Module):
     state. Reuses the teacher's own RMSNorm and activation so the two modes
     compute in the same frame."""
 
-    def __init__(self, orig_ffn, generator, layer_idx):
+    def __init__(self, orig_ffn, generator, layer_idx, grad_ckpt=True):
         super().__init__()
         self.orig = orig_ffn
         self.layer_idx = layer_idx
         self.use_generated = False
+        self.grad_ckpt = grad_ckpt
         # plain attribute, NOT a submodule: the generator is owned/optimized
         # outside the base model, exactly like D2L's Perceiver vs base.
         object.__setattr__(self, "_generator", generator)
@@ -162,7 +163,15 @@ class GeneratedFFN(nn.Module):
         if not self.use_generated:
             return self.orig(x, collect=collect)
         xn = self.orig.norm(x)                            # teacher's RMSNorm
-        wd, wu = self._generator(xn, self.layer_idx)      # [b,n,k,d] x2
+        if self.grad_ckpt and torch.is_grad_enabled():
+            # checkpoint ONLY the generator: its per-token Perceiver internals
+            # dominate memory; recompute them in backward. (Checkpointing the
+            # whole transformer Block trips a saved-tensor mismatch; the bare
+            # generator is a clean pure function and checkpoints fine.)
+            wd, wu = torch.utils.checkpoint.checkpoint(
+                self._generator, xn, self.layer_idx, use_reentrant=False)
+        else:
+            wd, wu = self._generator(xn, self.layer_idx)  # [b,n,k,d] x2
         h = torch.einsum("bnd,bnkd->bnk", xn, wd)
         h = self.orig.activation(h)
         out = torch.einsum("bnk,bnkd->bnd", h, wu)
