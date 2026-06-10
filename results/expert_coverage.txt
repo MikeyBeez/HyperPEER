@@ -1,0 +1,13 @@
+after   100 batches (0.05M tokens): unique experts/layer = [4241, 5147, 5718, 4779, 5482, 6893] (32.8% of bank overall)
+after   500 batches (0.26M tokens): unique experts/layer = [4490, 5243, 5754, 5022, 5776, 7424] (34.3% of bank overall)
+after  1000 batches (0.51M tokens): unique experts/layer = [4628, 5277, 5766, 5193, 5970, 7708] (35.1% of bank overall)
+after  2500 batches (1.28M tokens): unique experts/layer = [4945, 5312, 5795, 5419, 6381, 8105] (36.6% of bank overall)
+after  5000 batches (2.56M tokens): unique experts/layer = [5388, 5341, 5839, 5699, 6809, 8493] (38.2% of bank overall)
+
+replay done in 212s — usage skew per layer:
+  layer 0:  5388/16384 ever used, 10996 never; 50% of retrievals covered by top   856 experts, 90% by top  2287
+  layer 1:  5341/16384 ever used, 11043 never; 50% of retrievals covered by top   970 experts, 90% by top  2779
+  layer 2:  5839/16384 ever used, 10545 never; 50% of retrievals covered by top  1278 experts, 90% by top  3605
+  layer 3:  5699/16384 ever used, 10685 never; 50% of retrievals covered by top   937 experts, 90% by top  2501
+  layer 4:  6809/16384 ever used,  9575 never; 50% of retrievals covered by top  1096 experts, 90% by top  2911
+  layer 5:  8493/16384 ever used,  7891 never; 50% of retrievals covered by top  1200 experts, 90% by top  3549
