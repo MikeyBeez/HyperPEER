@@ -83,6 +83,8 @@ def main():
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--no-wandb", action="store_true")
     ap.add_argument("--run-name", type=str, default=None)
+    ap.add_argument("--init-from", type=str, default=None,
+                    help="warm-start generator from a saved checkpoint")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -114,6 +116,10 @@ def main():
         latent_n=args.latent_n, latent_d=args.latent_d,
         n_cross=args.n_cross, n_self=args.n_self,
     ).to(device).float()
+    if args.init_from:
+        ck = torch.load(args.init_from, map_location=device, weights_only=False)
+        generator.load_state_dict(ck["generator_state_dict"])
+        print(f"  warm-started from {args.init_from} (step {ck['step']})", flush=True)
     n_gen = sum(p.numel() for p in generator.parameters())
     print(f"  generator: {n_gen / 1e6:.1f}M params", flush=True)
 
