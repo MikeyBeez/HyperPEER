@@ -31,7 +31,8 @@ import torch
 import torch.nn.functional as F
 
 from src.harness import TeacherHarness
-from src.generator import ExpertGenerator, install_generated_ffn, set_generated
+from src.generator import (ExpertGenerator, install_generated_ffn,
+                           install_recursive_ffn, set_generated)
 
 TRAILING_WINDOW = 200
 
@@ -85,6 +86,9 @@ def main():
     ap.add_argument("--run-name", type=str, default=None)
     ap.add_argument("--init-from", type=str, default=None,
                     help="warm-start generator from a saved checkpoint")
+    ap.add_argument("--t-steps", type=int, default=1,
+                    help="micro-steps per FFN (Stage-3 native recursion)")
+    ap.add_argument("--rederive", choices=["once", "step"], default="step")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -123,8 +127,14 @@ def main():
     n_gen = sum(p.numel() for p in generator.parameters())
     print(f"  generator: {n_gen / 1e6:.1f}M params", flush=True)
 
-    wrappers = install_generated_ffn(th.model, generator)
-    print(f"  installed GeneratedFFN wrappers on {len(wrappers)} blocks", flush=True)
+    if args.t_steps > 1:
+        wrappers = install_recursive_ffn(th.model, generator,
+                                         t_steps=args.t_steps, rederive=args.rederive)
+        print(f"  installed RECURSIVE wrappers: t_steps={args.t_steps} "
+              f"rederive={args.rederive}", flush=True)
+    else:
+        wrappers = install_generated_ffn(th.model, generator)
+        print(f"  installed GeneratedFFN wrappers on {len(wrappers)} blocks", flush=True)
 
     optimizer = torch.optim.AdamW(generator.parameters(), lr=args.lr, betas=(0.9, 0.95))
 

@@ -73,12 +73,14 @@ def main():
     ap.add_argument("--stamp-at", type=int, nargs="*", default=[2500, 5000])
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--no-wandb", action="store_true")
+    ap.add_argument("--run-suffix", type=str, default="",
+                    help="appended to run name/results dir (e.g. _hot10k)")
     args = ap.parse_args()
 
     arm = ARMS[args.arm]
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    run_name = f"stage3_{args.arm}"
+    run_name = f"stage3_{args.arm}{args.run_suffix}"
     results_dir = Path("results") / run_name
     results_dir.mkdir(parents=True, exist_ok=True)
 
