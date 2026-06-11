@@ -1,0 +1,16 @@
+PRECISE t1_control
+  teacher (real PEER k256): CE=2.3227  ppl=10.203
+  student (generated):      CE=2.3509  ppl=10.495
+  delta: +0.0281 nats
+PRECISE fixed_fn
+  teacher (real PEER k256): CE=2.3227  ppl=10.203
+  student (generated):      CE=2.3527  ppl=10.514
+  delta: +0.0300 nats
+PRECISE rederive
+  teacher (real PEER k256): CE=2.3227  ppl=10.203
+  student (generated):      CE=2.3524  ppl=10.511
+  delta: +0.0297 nats
+PRECISE act_noise
+  teacher (real PEER k256): CE=2.3227  ppl=10.203
+  student (generated):      CE=2.3546  ppl=10.534
+  delta: +0.0319 nats
