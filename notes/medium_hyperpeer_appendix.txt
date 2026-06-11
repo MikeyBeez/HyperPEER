@@ -1,0 +1,62 @@
+Appendix: HyperPEER — Configurations, Numbers, and Reproduction Notes
+
+Companion to "What If the Experts Don't Have to Exist?" Everything here comes from the logs and metrics files in the repository at https://github.com/MikeyBeez/HyperPEER. All experiments ran on June 10, 2026, on a single RTX 5070 Ti with 16 GB of VRAM, under Pop!_OS 24.04 with PyTorch 2.11.0 and CUDA 12.8. Weights and Biases runs live in the project mikeybee/hyperpeer.
+
+
+A1. The teacher
+
+The teacher is the fixed-k 256 checkpoint from my earlier peer-adaptive-k project (checkpoint p0_matched_k256.pt). It is a decoder-only transformer with six layers, model width 384, eight attention heads, RoPE positions, pre-norm RMSNorm, and a PEER layer as the feed-forward block in every layer. Each PEER layer holds 16,384 single-neuron experts, stored as two embedding tables (a down-projection vector and an up-projection vector per expert, each of width 384), addressed by product keys with 128 keys per axis. Every token retrieves exactly 256 candidate experts per layer via the product-key cartesian top-k, and the expert outputs are combined with softmax weights renormalized over the retrieved set. The vocabulary is GPT-2 BPE, 50,257 tokens, with weight tying between the embedding and the LM head. Total parameters: 99,519,744, of which the expert tables hold about 75.5 million (16,384 experts times 384 dimensions times two vectors times six layers).
+
+Training data is TinyStories: 500,000 stories for training and 20,000 for validation, packed into uint16 memmaps, a bit over 100 million training tokens, context length 512. The teacher was trained with plain language-model cross-entropy, not distillation.
+
+The retrieval frontier referenced throughout the article comes from sibling checkpoints of the same model trained at fixed k of 4, 8, 16, 32, 64, 128, and 256. Their final validation losses, in nats, are: k of 4 scores 2.3673, k of 8 scores 2.3387, k of 16 scores 2.3233, k of 32 scores 2.3165, k of 64 scores 2.3076, k of 128 scores 2.3052, and k of 256 scores 2.3114. Note the frontier is not monotonic at the top end; k of 256 lands slightly above k of 128. The k-256 model is the teacher everywhere in this work, and on the 50-batch evaluation protocol described in A4 it measures 2.3227.
+
+
+A2. The capture harness
+
+The file src/harness.py wraps the teacher for distillation. Forward hooks on each block's FFN capture the pre-norm hidden state entering the PEER layer; the collect path of the PEER forward returns retrieval scores, expert IDs, and the gate mask, from which the harness recomputes the exact renormalized gate weights the teacher used. The down and up expert matrices are never stored; they are gathered on the fly from the teacher's embedding tables by expert ID. The harness includes a verification routine that reconstructs each layer's FFN output from the captured pieces (apply the teacher's own RMSNorm, dot with the gathered down vectors, GELU, scale by gate weights, sum against the up vectors) and compares it to the hooked output. On the k-256 teacher this reconstruction is exact, with zero maximum absolute error on all six layers, which establishes that the captured pairs are precisely the function the generator is asked to learn.
+
+
+A3. The generator
+
+The generator (src/generator.py) follows the Perceiver hypernetwork from Sakana's Doc-to-LoRA reference design, adapted from per-document to per-token conditioning. Each token's normalized hidden state forms a one-element key-value set. A bank of learned latents cross-attends to it, passes through self-attention blocks, and a head pools the latents with one query per generated expert row, offset by a layer embedding so a single generator serves all six layers. Two linear projections emit the down row and the up row of each expert. The up projection is initialized to zero, Doc-to-LoRA's stability trick, so generated experts begin as an exact no-op and the student starts from the model-with-FFNs-disabled baseline. The teacher's per-token gate weights are folded into the up rows during training, so the generator's target is a clean pair of 256-by-384 matrices per token per layer, and the student's FFN is simply: GELU of the down products, summed against the up rows.
+
+The small generator uses eight latents at width 256, two cross blocks and two self blocks: 3.8 million parameters. The scaled generator uses sixteen latents at width 512, two cross blocks and three self blocks: 17.1 million parameters. (An earlier draft of the article said 11 million; the training log's count of 17.09 million trainable parameters is the correct figure, and the bank-to-generator ratio is therefore about 4.4 to one, not 7 to one.)
+
+The student is the frozen teacher with each FFN wrapped so it can run in either mode: teacher mode executes the original PEER retrieval; generated mode calls the generator on the layer's normalized input. This mirrors Doc-to-LoRA's install-and-clear adapter injection. Wrapping only the generator call in PyTorch activation checkpointing (recompute in backward, non-reentrant) is what makes the 17-million-parameter version fit in 16 GB; checkpointing the whole transformer block fails with a saved-tensor-count mismatch, presumably interacting with the capture hooks.
+
+
+A4. Distillation runs and evaluation protocol
+
+The loss everywhere is KL divergence from the teacher's next-token distribution to the student's, computed over the full vocabulary at every token position, temperature 1. The optimizer is AdamW with betas 0.9 and 0.95, gradient clipping at 0.5, linear warmup then cosine decay, batch size 2 at context length 256. Non-finite losses skip the step, with a hard stop after 200 consecutive skips; no run ever skipped a step.
+
+The small run (W&B stage1_distill_k256): 5,000 steps at peak learning rate 1e-4, warmup 200. Wall time about 17 minutes at 4.9 steps per second.
+
+The scaled run, first attempt (stage1_distill_k256_big): same learning rate, 20,000-step schedule. Healthy through step 5,000 with held-out KL at 0.098 by step 4,750, then diverged between steps 5,000 and 5,250: held-out KL jumped from 0.10 to 2.6 and per-step KL pinned near 4, far above the 1.1 of a zero-initialized student. The run was killed and resumed (stage1_distill_k256_big2) from the step-5,000 checkpoint, which had been saved minutes before the next scheduled save would have overwritten it with the diverged state. The resume ran 15,000 further steps at peak learning rate 3e-5 and finished in 2 hours 56 minutes at 1.4 steps per second, slowed by the checkpoint recomputation. Held-out KL ended at about 0.040 and was still slowly declining.
+
+Generalization tracking: every 250 steps, both runs evaluated the distillation KL on eight held-out validation batches and eight fresh training batches. The val-minus-train gap stayed within plus or minus 0.02 nats around zero for the entire small run and all 20,000 steps of the scaled run, with no trend.
+
+The precise evaluation protocol behind every headline cross-entropy number (experiments/eval_student.py): 50 fixed-seed validation batches of 4 sequences at context length 512, teacher and student scored on identical batches. Results: teacher 2.3227 nats, perplexity 10.20. No-FFN baseline, approximately 3.0 nats, perplexity near 20.5. Small generator 2.4801, perplexity 11.94, a gap of 0.157 nats. Scaled generator 2.3710, perplexity 10.71, a gap of 0.048 nats. Note the distillation context was 256 but evaluation is at 512; the per-token generator transfers across context lengths without adjustment.
+
+
+A5. Expert coverage replay
+
+Because the distillation loop seeds its sampler, the exact training token stream is replayable. The script experiments/expert_coverage.py re-ran the identical 5,000 batches (2.56 million tokens) through the teacher with the collect path on and counted retrieved expert IDs per layer. Experts ever retrieved, by layer from bottom to top: 5,388, then 5,341, then 5,839, then 5,699, then 6,809, then 8,493, out of 16,384 each, which is 38.2 percent of the overall bank; 61.8 percent of experts were never retrieved once. The coverage curve flattens quickly: 32.8 percent of the bank after the first 50,000 tokens, 34.3 percent after a quarter million, 35.1 percent after half a million, 36.6 percent after 1.28 million, 38.2 percent after the full 2.56 million. Within the used set, the number of experts needed to cover half of all retrievals, per layer: 856, 970, 1,278, 937, 1,096, 1,200, which is roughly six percent of each bank; covering ninety percent takes between 2,287 and 3,605 experts per layer, between 14 and 22 percent. The replay took 212 seconds.
+
+
+A6. The stage-two switch experiment
+
+Both arms start from the scaled distilled checkpoint and train 5,000 steps of next-token cross-entropy on the same TinyStories stream, batch 2, context 256, with evaluation every 100 steps on eight held-out batches reporting student cross-entropy, teacher cross-entropy on the same batches, and the KL between them.
+
+The naive arm unfreezes the entire generator immediately and trains at learning rate 2e-5 with no anchor and no probe phase. The LP-FT arm first freezes the Perceiver trunk and trains only the head's two output projections (0.20 million parameters) for 500 steps at 1e-4, then unfreezes everything at 2e-5 with a KL-to-teacher anchor weighted 0.5 and annealed linearly to zero over the remaining steps.
+
+Pre-switch baseline on the eval protocol: student 2.3523, KL to teacher 0.0387. The naive arm's KL to teacher rose to a peak of about 0.074 within the first 300 steps and settled near 0.055; the per-100-step cross-entropy evaluations never showed degradation relative to the matched teacher numbers at any point in either arm, and no excursion toward the no-FFN baseline occurred. Final precise evaluations on the 50-batch protocol: naive arm 2.3573 nats, perplexity 10.563; LP-FT arm 2.3572 nats, perplexity 10.561. The arms are identical to within a tenth of a millinats, and both improve on the distilled 2.3710 by about 0.014 nats, landing between the k-4 and k-8 points of the retrieval frontier.
+
+The forgetting claim this tests, precisely: Sakana's Doc-to-LoRA paper (arXiv 2602.15902, appendix on training-objective ablation) reports that a hypernetwork trained from scratch with next-token loss underperforms one trained with KL distillation, 0.763 versus 0.819 normalized F1 on SQuAD and 0.235 versus 0.385 recall on their swapped split. That result concerns the choice of from-scratch objective. The sequential question, whether next-token training after distillation destroys the distilled solution, is what the two arms here address, and at this scale, in distribution, the answer is no. The untested case remains next-token training on a shifted distribution, where the pull away from the distilled solution should be strongest.
+
+
+A7. Reproduction
+
+Clone the repository and its sibling peer-adaptive-k, whose checkpoints directory must contain p0_matched_k256.pt and whose data directory must contain the TinyStories memmaps (its own README covers data preparation). The harness smoke test is python -m src.harness, which loads the teacher, captures a batch, verifies exact FFN reconstruction, and prints a validation loss. The small distillation is python -m experiments.distill_stage1 --steps 5000. The scaled run adds --latent-n 16 --latent-d 512 --n-self 3 --lr 3e-5. Coverage replay is python -m experiments.expert_coverage, the precise evaluation is python -m experiments.eval_student --ckpt with the checkpoint path, and the stage-two arms are python -m experiments.ntp_stage2 with --probe-steps 0 --kl-anchor 0 for the naive arm and --probe-steps 500 --kl-anchor 0.5 for the protected one. Every run writes a metrics JSONL into results, and the figures in the article come from those files unmodified.
+
+Peak GPU memory was about 7 GB for the scaled distillation with generator-only activation checkpointing; the same configuration without it does not fit in 16 GB. If a scaled run diverges, resume from the last good checkpoint at one-third the learning rate via --init-from; this recovered cleanly here, with the loss returning immediately to its pre-divergence value.

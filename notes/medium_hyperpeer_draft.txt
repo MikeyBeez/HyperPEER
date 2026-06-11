@@ -1,0 +1,80 @@
+What If the Experts Don't Have to Exist?
+
+HyperPEER: replacing a stored expert bank with a hypernetwork that writes the experts on demand. One day of experiments on a single consumer GPU, with all the numbers, including the ones that went wrong.
+
+
+DeepMind's PEER architecture answers a question every transformer asks at every token: which little piece of the network should handle this? Its answer is a lookup. PEER keeps a bank of up to a million tiny experts, each one just a pair of vectors, and uses a clever product-key index to retrieve a few hundred of them per token. The retrieved experts are assembled into a small MLP, applied, and discarded. It works, and it scales, and it rests on an assumption so natural that it is easy to miss: the experts have to be stored somewhere before they can be retrieved.
+
+HyperPEER asks whether that assumption is necessary. Instead of retrieving experts from a bank, train a small hypernetwork that takes the token's hidden state and generates the expert matrices directly. No bank, no index, no retrieval. The experts become a function of the input rather than entries in a table. A bank can only ever return what was stored in it. A generator might, in principle, synthesize sensible experts for inputs it has never seen.
+
+The bet, in one sentence: the function PEER computes is much smaller than the bank PEER stores, and a generator can learn the function without carrying the table.
+
+I ran the first full test of this idea in one day, on one RTX 5070 Ti. This article reports everything: the result, the instrument failures, the training divergence, and the experiment where the published warning failed to reproduce.
+
+
+The parts list
+
+None of the components are mine, and I want the lineage explicit. The teacher is a PEER language model I trained for an earlier project: six layers, d_model of 384, about 99.5 million parameters, with a bank of 16,384 experts in every layer and 256 experts retrieved per token, trained on TinyStories. The PEER implementation descends from lucidrains' open-source PEER-pytorch, with my modifications. The method for generating adapters comes from Sakana AI's Text-to-LoRA and Doc-to-LoRA papers: a small Perceiver-style hypernetwork that emits adapter weights, trained student-teacher by matching the base model's output distribution. I had previously reimplemented Doc-to-LoRA from their paper and verified it works, which matters, because Sakana's headline claims have not been independently replicated, and now at least the core mechanism has been, once, by me.
+
+The synthesis is the only part that is mine: point the Doc-to-LoRA machinery at PEER's expert bank. PEER experts are rank-one adapters, which makes them little LoRAs. If a hypernetwork can generate a LoRA from a document, maybe it can generate a token's worth of experts from a hidden state.
+
+The training recipe is logit distillation, not weight regression. The student is the same frozen language model with its expert retrieval replaced by generated experts. The loss is the KL divergence between the teacher's next-token distribution and the student's. We never ask the generator to reproduce the bank's weights; we ask it to reproduce the bank's behavior. Sakana's own ablation, in an appendix I will come back to, found that matching the output distribution transfers more than matching tokens, and my results are consistent with that.
+
+One scope note. The teacher uses one head with 16,384 experts per layer rather than PEER's million-expert design point, because that is what trains overnight on one consumer GPU. Everything below should be read at that scale.
+
+
+The morning: a generator barely trying
+
+The first generator was deliberately small: 3.8 million parameters, a Perceiver trunk with eight latents, generating all 256 expert pairs for all six layers from each token's hidden state. Distillation ran for 5,000 steps at batch size two. The whole run took 17 minutes.
+
+Three numbers anchor everything that follows. The teacher, with real retrieval over its full bank, scores a validation perplexity of 10.2 on TinyStories. The same model with its expert layers deleted outright scores about 20.5. That spread is everything the expert bank contributes. After 17 minutes of distillation, the model running on generated experts scored 11.9.
+
+In other words, a 3.8-million-parameter generator, trained for less time than it takes to eat lunch, recovered about three quarters of what the expert layers do, without storing a single expert.
+
+The make-or-break check was generalization. If the generator only fits the inputs it trained on, it has memorized a lookup table and the premise fails. So every evaluation tracked the distillation loss on held-out data against the same loss on training data. The gap stayed at zero, within noise, for the entire run. I will be honest about why that test was easy to pass: 5,000 steps saw only about 2.5 million tokens out of a hundred-million-token corpus, with essentially no repeats, so memorization was nearly impossible. The gap staying at zero was necessary, not sufficient. But the generator was unmistakably doing real functional work on inputs it had never seen.
+
+
+The question that produced the best evidence
+
+At this point I asked a skeptical question: did we even train on all of the experts? I doubted it.
+
+We measured it exactly. Because the training loop seeds its data sampler, we could replay the identical token stream through the teacher and count which expert IDs were ever retrieved. Over the full 2.56 million training tokens, the teacher never touched 62 percent of its expert bank. Per layer, somewhere between 5,300 and 8,500 of the 16,384 experts were ever used at all. And inside the used third, the skew was severe: about six percent of the bank accounted for half of all retrievals, and around a fifth of the bank covered ninety percent.
+
+I had asked the question as an objection, and it is one: whatever we distilled is the TinyStories restriction of the teacher, not the full function, and nobody should claim otherwise. But notice what the measurement says about banks. The expert tables hold about 75 million of the model's 99.5 million parameters, and on real data, half the layer's behavior concentrates in six percent of them. The function PEER computes is dramatically lower-dimensional than the bank that stores it. That is precisely the gap a generator lives in. The skeptical question turned out to be the strongest argument for the whole idea.
+
+
+The afternoon: scaling up, and a divergence
+
+The obvious next move was a bigger generator: sixteen latents at width 512, about 17 million parameters, with a 20,000-step budget. The first attempt out-of-memoried a 16-gigabyte card, because a per-token Perceiver multiplies its activations by every token in the batch; the fix was to recompute the generator's internals during the backward pass rather than storing them. The second attempt trained beautifully for 5,000 steps and then detonated: between one evaluation and the next, the distillation loss went from 0.10 to 2.6 and stayed there. The learning rate that a 3.8-million-parameter hypernetwork tolerated was too hot for a 17-million-parameter one, and gradient clipping slowed the explosion without preventing it.
+
+I am including this because hypernetworks that generate weight matrices have a reputation for instability, the reputation is deserved, and pretending otherwise would make this report less useful. The recovery was mundane: a checkpoint from minutes before the spike, restarted at a third of the learning rate, ran the remaining 15,000 steps without incident. The only reason a good checkpoint existed is that the save cadence happened to outrun the divergence. Stamp your checkpoints.
+
+The scaled run finished with the precise evaluation at 2.371 nats of cross-entropy against the teacher's 2.323, a gap of 0.048 nats. To make that concrete, my earlier PEER project produced a frontier of fixed-retrieval models: retrieving 4 experts per token scores 2.367, 8 experts scores 2.339, 16 scores 2.323. The generated experts, after three hours of distillation, were statistically tied with real retrieval at k equals 4. The held-out gap stayed at zero through all 20,000 steps.
+
+So by dinner: a 17-million-parameter generator stood in for a 75-million-parameter bank at a cost of about five percent perplexity, tied with genuine retrieval of four experts, with no sign of memorization.
+
+
+The evening: the forgetting that wasn't
+
+The final experiment was the one I was most worried about. The plan for this system was always two-stage: distill the generator against the teacher, then switch to ordinary next-token training so the generated experts can become what the task wants rather than what the teacher had. I remembered a warning about exactly this switch, something I had read or heard from the Sakana orbit, to the effect that moving from distillation to next-token training causes catastrophic forgetting, with freezing the model and training a projection first as the fix.
+
+Before testing it we chased down the provenance, and the trail ends somewhere real but different. Sakana's Doc-to-LoRA paper, in its appendix on training objectives, reports that training the hypernetwork with next-token loss instead of KL distillation gives substantially worse results, with recall on their hardest generalization split dropping from 0.385 to 0.235. That is a finding about which objective to train with from scratch. It is not a finding about whether next-token training after distillation destroys what distillation built. As far as I can tell, nobody had run that experiment.
+
+So we ran both arms. The naive arm took the distilled generator, unfroze everything, and trained on pure next-token loss with no protection whatsoever. The protected arm did the freeze-then-unfreeze procedure, which turns out to be the published LP-FT recipe: freeze the trunk, train only the output projections, then unfreeze with a small annealed anchor back to the teacher.
+
+The forgetting did not happen. The naive arm showed a clear transition signature, with the KL to the teacher roughly doubling in the first 300 steps as the student drifted off the teacher's exact distribution, but the actual task performance never degraded at all, let alone collapsed toward the no-expert baseline. It just improved, straight through the switch. And the two arms finished at endpoints identical to four decimal places: 2.3573 nats for the naive arm, 2.3572 for the protected one. The insurance cost nothing and bought nothing.
+
+Next-token training improved both to 2.357, which moves the generated experts clearly past retrieval at k equals 4 and partway to k equals 8. It did not beat the teacher. Five thousand gentle steps closed about thirty percent of the remaining gap.
+
+The honest caveat: this was next-token training on the same distribution as the distillation. The setting where I would still expect trouble is adaptation to genuinely new data, where the pull away from the distilled solution is much stronger. That arm is the natural next experiment, and if the forgetting shows up there, the LP-FT machinery is already built and tested.
+
+
+Why I care, and why you might
+
+The practical case is memory. A PEER-style bank must be resident to be retrievable; at the architecture's intended scale that is a vast table held in RAM so that a few hundred entries can be gathered per token. A generator replaces residency with computation, and computation is the resource a local machine actually has spare, since consumer-GPU inference spends most of its time waiting on memory anyway. In this first test, 17 million generator parameters stood in for 75 million bank parameters at five percent perplexity cost, and the coverage measurement explains why that exchange rate is possible: most of the bank is air.
+
+There is also a research-method point. Every result in this article was produced in one day on one consumer GPU, including the failure modes. The largest labs cannot cheaply run twenty experiments before lunch at their scale, so they don't, and ideas like this go untried. I test on tiny corpora first; if an idea fails there, it is dead, and if it survives, it has earned a bigger rung. This idea has earned the bigger rung: WikiText next, which means retraining the teacher, and a task-shifted version of the forgetting experiment.
+
+What is proven so far is exactly this, no more: at small scale, on a narrow corpus, a hypernetwork can learn to write a transformer's experts on demand, generalizes to held-out inputs while doing it, matches modest real retrieval, survives the switch to task training, and improves from there. Whether generation can match retrieval at the scales where PEER actually shines is open. But the assumption that the experts have to exist before you can use them is now, at least at this scale, demonstrably optional.
+
+Code, logs, checkpoints, and every number in this article: https://github.com/MikeyBeez/HyperPEER. The teacher comes from my earlier PEER adaptive-k project, the method from Sakana AI's Text-to-LoRA and Doc-to-LoRA, the original architecture from Xu Owen He's Mixture of A Million Experts at DeepMind, and the stability recipe from Kumar et al.'s LP-FT, which turned out, this time, to be insurance against a fire that never started.
