@@ -188,6 +188,71 @@ def install_generated_ffn(model, generator):
     return wrappers
 
 
+class RecursiveGeneratedFFN(nn.Module):
+    """Stage-3 cell: T micro-steps of generated experts inside one FFN slot.
+
+        u_0 = x
+        for t in 1..T:
+            h_t = norm(u_{t-1})
+            wd, wu = generate(h_t)            # rederive='step': every t
+                                              # rederive='once': only at t=1, reused
+            u_t = u_{t-1} + sum_i wu_i * GELU(wd_i . h_t)
+            (+ optional Gaussian noise on u_t between steps: the GRAM-style
+             activation-space perturbation, std = noise_std * RMS(u_t))
+        return u_T - x                        # block residual adds this once
+
+    With t_steps=1 this is numerically identical to GeneratedFFN.
+    """
+
+    def __init__(self, orig_ffn, generator, layer_idx, t_steps=1,
+                 rederive="step", noise_std=0.0, grad_ckpt=True):
+        super().__init__()
+        self.orig = orig_ffn
+        self.layer_idx = layer_idx
+        self.t_steps = t_steps
+        self.rederive = rederive
+        self.noise_std = noise_std
+        self.grad_ckpt = grad_ckpt
+        self.use_generated = False
+        object.__setattr__(self, "_generator", generator)
+
+    def _gen(self, h):
+        if self.grad_ckpt and torch.is_grad_enabled():
+            return torch.utils.checkpoint.checkpoint(
+                self._generator, h, self.layer_idx, use_reentrant=False)
+        return self._generator(h, self.layer_idx)
+
+    def forward(self, x, collect=False):
+        if not self.use_generated:
+            return self.orig(x, collect=collect)
+        u = x
+        wd = wu = None
+        for t in range(self.t_steps):
+            h = self.orig.norm(u)
+            if wd is None or self.rederive == "step":
+                wd, wu = self._gen(h)
+            a = torch.einsum("bnd,bnkd->bnk", h, wd)
+            a = self.orig.activation(a)
+            u = u + torch.einsum("bnk,bnkd->bnd", a, wu)
+            if self.noise_std > 0 and t < self.t_steps - 1:
+                rms = u.pow(2).mean(dim=-1, keepdim=True).sqrt()
+                u = u + torch.randn_like(u) * (self.noise_std * rms)
+        return u - x, {}
+
+
+def install_recursive_ffn(model, generator, t_steps=1, rederive="step",
+                          noise_std=0.0, grad_ckpt=True):
+    """Wrap every block's FFN with the recursive cell; returns the wrappers."""
+    wrappers = []
+    for li, blk in enumerate(model.blocks):
+        w = RecursiveGeneratedFFN(blk.ffn, generator, li, t_steps=t_steps,
+                                  rederive=rederive, noise_std=noise_std,
+                                  grad_ckpt=grad_ckpt)
+        blk.ffn = w
+        wrappers.append(w)
+    return wrappers
+
+
 def set_generated(wrappers, on):
     """on=True -> student (generated experts); on=False -> teacher (real PEER)."""
     for w in wrappers:

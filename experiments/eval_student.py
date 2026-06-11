@@ -16,7 +16,7 @@ import math
 import torch
 
 from src.harness import TeacherHarness
-from src.generator import ExpertGenerator, install_generated_ffn, set_generated
+from src.generator import ExpertGenerator, install_recursive_ffn, set_generated
 
 
 @torch.no_grad()
@@ -27,6 +27,11 @@ def main():
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--ctx", type=int, default=512)
     ap.add_argument("--seed", type=int, default=42)
+    # Stage-3 recursion shape; defaults reproduce the original single-pass eval
+    ap.add_argument("--t-steps", type=int, default=1)
+    ap.add_argument("--rederive", choices=["once", "step"], default="step")
+    ap.add_argument("--noise-std", type=float, default=0.0)
+    ap.add_argument("--noise-seed", type=int, default=1234)
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -38,7 +43,12 @@ def main():
     generator = ExpertGenerator(**ck["generator_config"]).to(device).float()
     generator.load_state_dict(ck["generator_state_dict"])
     generator.eval()
-    wrappers = install_generated_ffn(th.model, generator)
+    wrappers = install_recursive_ffn(th.model, generator, t_steps=args.t_steps,
+                                     rederive=args.rederive, noise_std=args.noise_std)
+    if args.t_steps > 1 or args.noise_std > 0:
+        print(f"recursion: t_steps={args.t_steps} rederive={args.rederive} "
+              f"noise_std={args.noise_std}")
+        torch.manual_seed(args.noise_seed)
     print(f"loaded generator from step {ck['step']}  "
           f"config={ck['generator_config']}", flush=True)
 
