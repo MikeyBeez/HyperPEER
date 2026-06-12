@@ -1,0 +1,48 @@
+HyperPEER Part Two: We Put Recursion on Trial, and the Control Group Won
+
+A follow-up to "What If the Experts Don't Have to Exist?" — new experiments on the generated-expert model: what we tried, why we tried it, what survived, and the training recipe that turned out to be the real finding.
+
+
+In part one, I reported that a small hypernetwork can learn to write a transformer's experts on demand instead of retrieving them from a stored bank. Distilled against a trained PEER teacher on TinyStories, a 17-million-parameter generator stood in for a 75-million-parameter expert bank at about five percent perplexity cost, generalized cleanly to held-out inputs, and survived the switch from distillation to ordinary next-token training without the catastrophic forgetting I had been warned about. The generated experts ended that article worth about four retrieved ones on the teacher's own retrieval frontier — the family of models trained at fixed retrieval budgets, where retrieving four experts per token scores 2.367 nats and the full teacher 2.323.
+
+This article is about what happened next: a day spent testing the idea that was supposed to be the whole point of the project, and the discipline that kept us from publishing a false positive about it.
+
+
+Why recursion was next
+
+The original design note for this project was not about replacing retrieval with generation. It was about recursion. The sketch: the hidden state goes into a hypernetwork, the hypernetwork emits a transform, the state runs through that transform, and the refined state conditions the next generation — around and around, the reasoning operation re-derived from the data at every step rather than fixed in the weights. Part one's generator was the un-rolled, single-pass version, built first because it was the load-bearing assumption: if a hypernetwork cannot emit a useful transform once, looping it is pointless.
+
+It can, so we looped it. The specific form: inside each transformer layer, instead of generating the expert matrices once and applying them once, apply them, update the hidden state, and take a second micro-step — with the experts for that second step either reused or freshly generated from the updated state. Freshly generated is the interesting case. It is the difference between recursing a fixed function over a changing state, which is what TRM-style recursive models do, and re-deriving the function itself as the state evolves, which was the design note's bet. I had also, at one point, forgotten my own original framing and was reminded of it mid-design: the alternative to changing the function is perturbing the state — inject noise between applications and let variability come from activation space instead of function space. That forgotten idea turned out to be exactly the control arm the experiment needed.
+
+So the trial had four arms, all starting from part one's best model and continuing with next-token training. A control that simply trained more, no recursion. A second-pass arm that reused the same generated experts. The re-derivation arm, generating fresh experts mid-layer from the updated state. And the noise arm: same experts twice, with calibrated Gaussian noise jiggling the state in between. If re-derivation is the real idea, it should beat all three; if it only beats the quiet arms but ties the noise arm, then any benefit is just perturbation wearing a fancy costume.
+
+
+What happened, in order
+
+Round one was a tie. At a gentle learning rate for five thousand steps, all four arms landed within a few thousandths of each other. But that proved less than it seemed, for a reason worth spelling out because it generalizes: a model that has spent its entire training doing one pass cannot learn a new computational strategy during a short fine-tune at a decaying learning rate, especially when the loss is already near converged and the gradients are tiny. The recursive arms also start from a hole — bolting a second pass onto a one-pass model makes it instantly worse, and recovery eats most of the budget. A null under those conditions is weak evidence. The fix was equally simple: rerun the interesting arm hot. Triple the learning rate, double the steps, give the model an actual chance to discover what a second pass is for.
+
+The hot recursive run produced the best model of the entire project. Its evaluation loss dropped well past everything from part one, and on the quick evaluation batches it was, for a few giddy hours, fractionally ahead of the teacher itself. If we had stopped there, the headline would have written itself: recursion works, function-space re-derivation pays, the design note vindicated.
+
+We did not stop there, because the hot run had changed two things at once — recursion, and the training schedule — and credit was ambiguous. So we ran the attribution control: the same hot schedule, ten thousand steps at the higher rate, applied to the plain one-pass model. I pre-registered the criterion before the control finished: if it matched the recursive arm, the schedule gets the credit.
+
+The control won. Not just matched — won, by a hair: 2.3372 nats against the recursive arm's 2.3390, on the rigorous evaluation protocol. Every bit of the improvement had come from training hotter and longer. The recursion contributed nothing except a doubled inference bill.
+
+We also tried the purist's version: train recursion natively, distilling a two-pass student from scratch rather than retrofitting one. That failed completely — twenty thousand steps scheduled, killed after eleven thousand with the model still pinned at the level of a network with its expert layers deleted, having never begun to converge. Which is itself a finding: the one-pass solution appears to be a prerequisite. You can heat a trained single-pass generator into trying recursion; you cannot apparently raise a recursive generator from birth, at least not with this loss and schedule.
+
+
+What we actually found
+
+First, the null, stated plainly: within-layer recursion — same experts reapplied, experts re-derived from the evolving state, state perturbed with noise; retrofitted gently, retrofitted hot, or trained natively — adds nothing on this corpus. The pre-registered control removed the wiggle room, and I am glad it existed before the result did, because the hot recursive run looked exactly like the discovery we wanted, for exactly the wrong reason.
+
+My best explanation for the null is a ceiling. The teacher sits within a whisker of TinyStories' entropy floor; children's stories simply do not contain many tokens hard enough to reward a second reasoning pass. On this view the experiment did not test "is re-deriving the function useful," it tested "is there anything left to compute," and the answer was no. That makes recursion a deferred question, not a dead one, and it gets exactly one retry: on a corpus with hard tokens, which is where this series goes next.
+
+Second, the accidental positive, which is worth more than the null. The hot schedule applied to the plain single-pass generator — distill with KL first, then fine-tune on next-token at a learning rate high enough to actually move things — ground the gap to the teacher from 0.048 nats down to 0.0145. The generated experts now score 2.3372 against the teacher's 2.3227, which is past the eight-expert point on the retrieval frontier and closing on sixteen. In part one's terms: the generator that was worth four retrieved experts is now worth more than eight, with no architecture change and no extra inference cost, purely from a better training recipe. A 17-million-parameter generator now matches, within about one and a half percent perplexity, a 75-million-parameter bank it has never seen two-thirds of.
+
+Third, a small methodological inventory, since this project doubles as an argument for cheap science. Everything above ran in about a day on one consumer GPU. The day contained one false dawn that a pre-registered control caught, one informative training collapse, and one recipe worth keeping — and the total cost of being wrong at every intermediate step was a few hours of electricity. The same arc at frontier scale would have been a quarter's worth of compute requests, which is to say it would not have happened. Run the matched control before you believe anything. It is never the exciting run. It is the one that keeps you honest.
+
+
+What's next
+
+The WikiText rung. The teacher gets retrained on WikiText-103, the whole distill-then-hot-fine-tune pipeline reruns on a corpus with real entropy, and two questions get answered at once: whether generation holds its exchange rate when the tokens get hard, and whether the recursion null was really TinyStories being too easy. The teacher is training as I write this.
+
+Code, logs, checkpoints, and every number: https://github.com/MikeyBeez/HyperPEER. Lineage as before — PEER from Xu Owen He at DeepMind, the generator recipe from Sakana AI's Text-to-LoRA and Doc-to-LoRA, recursion's framing owed to the TRM line of work, and the attribution discipline owed to every null result I have ever published.
