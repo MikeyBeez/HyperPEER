@@ -1,0 +1,41 @@
+HyperPEER Part Three: The Hard-Corpus Test, and What the Toy Taught
+
+Third and last in a series. Part one showed a hypernetwork can write a transformer's experts on demand instead of retrieving them from a stored bank. Part two found a training recipe that pushed the generated experts past the bank that taught them. This part asks the question both of those left hanging: does any of it survive a corpus with real entropy?
+
+
+My testing ladder is simple and I have used it for years: try an idea on a tiny corpus first, and if it fails there, drop it; if it works, it has earned a harder corpus; if it works on WikiText, publish, because what works on WikiText might work at scale, and what fails there probably won't. Parts one and two lived on TinyStories — children's stories, a corpus so easy that our teacher model sat within a whisker of its entropy floor. Every result so far carried that asterisk. This part removes it.
+
+The setup mirrors the earlier parts exactly, one rung up. A fresh PEER teacher — same architecture, same 16,384-expert banks, same retrieval — trained on WikiText-103, real encyclopedia text with one hundred and eighteen million tokens. The teacher lands at perplexity 67 where the TinyStories teacher sat at 10, which tells you what kind of neighborhood we have moved into. Then the same pipeline against it: distill the generator with KL on the logits, fine-tune hot on next-token, anneal down and keep going — the exact recipe that beat the teacher in part two.
+
+
+What survived
+
+The result I care most about survived completely. Through every stage on the hard corpus — twenty thousand distillation steps, twenty thousand next-token steps — the gap between training and held-out distillation loss stayed pinned at zero, exactly as it had on TinyStories. This was always the make-or-break property: a generator that memorizes which experts go with which training inputs is just a worse lookup table, and the whole premise dies. It is now the most replicated finding in this project. The generator learns a function from hidden states to experts, not a phone book, and corpus difficulty does not change that.
+
+The recipe also survived, in the directional sense: every stage improved the model, in the same order and the same shape as before. Distillation did the heavy lifting, the hot fine-tune helped, the anneal helped more.
+
+What did not survive is the exchange rate. On TinyStories the recipe ended with the generated experts beating the bank. On WikiText the final score is teacher at perplexity 67.4, student at 74.7 — the student about eleven percent behind, where on the easy corpus it finished half a percent ahead. Generation still works on hard text; it no longer works for free.
+
+
+The lesson the budget taught
+
+I want to be careful about what that eleven percent means, because the obvious reading — generation degrades with difficulty — is not quite what the data says. The honest reading is that we ran out of budget, and we ran out of it in an instructive way.
+
+Every stage in this pipeline reused the step counts that had been calibrated on TinyStories, where the corpus is so easy the budgets overshot convergence. On WikiText, every single curve was still descending when its schedule expired. The teacher itself got one epoch and was still learning. The distillation KL was still falling at step twenty thousand. The numbers above are not where the method saturates; they are where it was standing when the music stopped.
+
+And the way it ran out of budget exposed a principle worth more than the benchmark number. Compare the two signals. Distillation — matching the teacher's full distribution over fifty thousand vocabulary entries at every position — closed about 0.32 nats of teacher-gap in its twenty thousand steps. The two next-token stages, learning from one correct token per position, closed about 0.03 in the same number of steps. Per step, the rich signal moved the student roughly ten times farther than the sparse one. My collaborator in this work stated the resulting policy mid-experiment, and I think it is the most transferable sentence in the series: train the teacher until it stops learning, distill until the KL plateaus, and only then switch to next-token — whose proper job is the last mile, the residual the teacher cannot provide because the teacher is no longer the ceiling. On TinyStories we obeyed that policy by accident: distillation had saturated, the leftover gap was small, and next-token training duly finished it and crossed the teacher. On WikiText we violated it twice — undertrained teacher, unconverged distillation — and handed next-token training a hill ten times too steep for its signal. It crawled exactly as the arithmetic predicts.
+
+So part three's headline is conditional, the way honest toy results usually are: at matched budgets, generation trails retrieval by eleven percent on hard text, with every indicator saying the gap is a budget artifact and none saying it is a wall. Settling which would take the converged version of this pipeline — about a day of compute instead of an afternoon.
+
+One more deferral, stated plainly. Part two ended with recursion as the open question: a second expert-generation pass per layer bought nothing on TinyStories, plausibly because the corpus had nothing left to compute. WikiText has the headroom, and I intended to retest here. But testing recursion on a base model that hasn't finished ordinary learning would manufacture exactly the kind of fake null that part two taught us to catch — any benefit of a second pass would be swamped by the first-order learning still in progress. The recursion experiment needs the converged base, so it stays open, now with a precise precondition instead of a vague intention.
+
+
+Where this leaves the idea
+
+Three rungs of results, stated at their honest sizes. A hypernetwork one quarter the size of a PEER expert bank can learn to write the bank's experts per token, generalizes to held-out inputs without exception across two corpora and every training regime we tried, matches and slightly beats retrieval on an easy corpus, and trails it by roughly ten percent on a hard corpus at matched, deliberately small budgets. The bank's residency in memory — the thing that makes million-expert architectures awkward on local machines — is demonstrably not load-bearing for the function it computes. Within-layer recursion has produced nothing yet, but has not had its fair test.
+
+It is still a toy model, and I want to resist the temptation to dress it as more. The teacher is a hundred million parameters; PEER's design point is billions, with a million experts; nothing here proves the exchange rate holds at that scale, and the coverage statistics that make generation plausible at toy scale — half the bank's behavior concentrated in six percent of its entries — need re-measuring on banks that big. What the toy establishes is narrower and, I think, worth having: every cheap way this idea could have died, it didn't. The expensive ways remain untested, and the toy has now told us exactly which experiments those are and what they cost. That is what toys are for.
+
+Whether we run the converged version, or hand the question to someone with a Ferrari, is a decision for after a night's sleep. The repository has everything: code, checkpoints, logs, and every number in all three parts. https://github.com/MikeyBeez/HyperPEER
+
+Lineage, one last time: PEER is Xu Owen He's work at DeepMind; the generator method is Sakana AI's Text-to-LoRA and Doc-to-LoRA; the recipe's stages are ordinary distillation and fine-tuning, arranged by trial, error, and one good sentence about division of labor; and the discipline throughout is owed to the small-corpus ladder, which costs nothing and catches almost everything.
