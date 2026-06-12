@@ -1,0 +1,20 @@
+SMOKE t1_control
+  step      5/10  ce= 2.8004  trail= 2.4641  lr=1.4e-05  1.48 step/s  eta 3s  skipped 0
+  step     10/10  ce= 1.8282  trail= 2.3839  lr=0.0e+00  1.49 step/s  eta 0s  skipped 0
+  [eval @ 10 | train] student-CE=2.1781  teacher-CE=2.1330  KL=0.0612
+  -> stamped checkpoint at step 10
+SMOKE fixed_fn
+  step      5/10  ce= 2.8746  trail= 2.5712  lr=1.4e-05  1.44 step/s  eta 3s  skipped 0
+  step     10/10  ce= 1.8987  trail= 2.4629  lr=0.0e+00  1.45 step/s  eta 0s  skipped 0
+  [eval @ 10 | train] student-CE=2.2144  teacher-CE=2.1330  KL=0.0975
+  -> stamped checkpoint at step 10
+SMOKE rederive
+  step      5/10  ce= 2.8429  trail= 2.5373  lr=1.4e-05  0.75 step/s  eta 7s  skipped 0
+  step     10/10  ce= 1.8879  trail= 2.4436  lr=0.0e+00  0.75 step/s  eta 0s  skipped 0
+  [eval @ 10 | train] student-CE=2.2145  teacher-CE=2.1330  KL=0.0916
+  -> stamped checkpoint at step 10
+SMOKE act_noise
+  step      5/10  ce= 2.8841  trail= 2.5726  lr=1.4e-05  1.44 step/s  eta 3s  skipped 0
+  step     10/10  ce= 1.9006  trail= 2.4639  lr=0.0e+00  1.44 step/s  eta 0s  skipped 0
+  [eval @ 10 | train] student-CE=2.2138  teacher-CE=2.1330  KL=0.1003
+  -> stamped checkpoint at step 10

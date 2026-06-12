@@ -1,0 +1,91 @@
+_wandb:
+    value:
+        cli_version: 0.27.2
+        e:
+            4sgvhorj955z7gdn0acxprbukrf1fean:
+                args:
+                    - --ckpt
+                    - results/stage1_distill_k256_big2/generator_checkpoint.pt
+                    - --steps
+                    - "5000"
+                    - --probe-steps
+                    - "0"
+                    - --kl-anchor
+                    - "0"
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "481593462784"
+                        used: "43087073280"
+                email: mbonsign@gmail.com
+                executable: /home/bard/Code/HN/peer-adaptive-k/.venv/bin/python
+                git:
+                    commit: fbb8c18acad4fdaa318d09c1963d0bab065b595a
+                    remote: git@github.com:MikeyBeez/HyperPEER.git
+                gpu: NVIDIA GeForce RTX 5070 Ti
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 8960
+                      memoryTotal: "17094934528"
+                      name: NVIDIA GeForce RTX 5070 Ti
+                      uuid: GPU-e11e9349-ebd9-48e9-10d2-7d57ffd730b5
+                host: pop-os
+                memory:
+                    total: "33570021376"
+                os: Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39
+                program: -m experiments.ntp_stage2
+                python: CPython 3.12.3
+                root: /mnt/data/Code/HN/HyperPEER
+                startedAt: "2026-06-10T22:37:08.795780Z"
+                writerId: 4sgvhorj955z7gdn0acxprbukrf1fean
+        m: []
+        python_version: 3.12.3
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+            "4": 3.12.3
+            "5": 0.27.2
+            "12": 0.27.2
+            "13": linux-x86_64
+batch:
+    value: 2
+ckpt:
+    value: results/stage1_distill_k256_big2/generator_checkpoint.pt
+ckpt_every:
+    value: 1000
+ctx:
+    value: 256
+eval_batches:
+    value: 8
+eval_every:
+    value: 100
+kl_anchor:
+    value: 0
+log_every:
+    value: 25
+lr_ft:
+    value: 2e-05
+lr_probe:
+    value: 0.0001
+mode_name:
+    value: null
+no_wandb:
+    value: false
+probe_steps:
+    value: 0
+seed:
+    value: 1337
+steps:
+    value: 5000
+warmup:
+    value: 100

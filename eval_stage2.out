@@ -1,0 +1,8 @@
+ARM naive:
+  teacher (real PEER k256): CE=2.3227  ppl=10.203
+  student (generated):      CE=2.3573  ppl=10.563
+  delta: +0.0346 nats
+ARM lpft:
+  teacher (real PEER k256): CE=2.3227  ppl=10.203
+  student (generated):      CE=2.3572  ppl=10.561
+  delta: +0.0345 nats
