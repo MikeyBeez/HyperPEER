@@ -32,10 +32,18 @@ def main():
     ap.add_argument("--rederive", choices=["once", "step"], default="step")
     ap.add_argument("--noise-std", type=float, default=0.0)
     ap.add_argument("--noise-seed", type=int, default=1234)
+    ap.add_argument("--teacher-ckpt", type=str, default=None)
+    ap.add_argument("--data-dir", type=str, default=None)
     args = ap.parse_args()
 
+    import os
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    th = TeacherHarness(device=device)
+    th_kw = {}
+    if args.teacher_ckpt:
+        th_kw["ckpt_path"] = os.path.expanduser(args.teacher_ckpt)
+    if args.data_dir:
+        th_kw["data_dir"] = os.path.expanduser(args.data_dir)
+    th = TeacherHarness(device=device, **th_kw)
     th.data.context_len = args.ctx
     th.model.eval()
 

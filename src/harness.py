@@ -54,7 +54,8 @@ def _load_teacher_pkg(repo=TEACHER_REPO):
 class TeacherHarness:
     """Wraps the trained PEER LM; captures per-layer (hidden, ids, gate, logits)."""
 
-    def __init__(self, ckpt_path=DEFAULT_CKPT, device="cuda", repo=TEACHER_REPO):
+    def __init__(self, ckpt_path=DEFAULT_CKPT, device="cuda", repo=TEACHER_REPO,
+                 data_dir=None):
         _load_teacher_pkg(repo)
         from peer_src.config import Config
         from peer_src.model import PEERLanguageModel
@@ -74,7 +75,7 @@ class TeacherHarness:
             p.requires_grad_(False)
 
         self.data = TokenData(
-            data_dir=os.path.join(repo, "data"),
+            data_dir=data_dir or os.path.join(repo, "data"),
             context_len=self.cfg.context_len,
             device=device,
         )

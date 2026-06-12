@@ -89,6 +89,10 @@ def main():
     ap.add_argument("--t-steps", type=int, default=1,
                     help="micro-steps per FFN (Stage-3 native recursion)")
     ap.add_argument("--rederive", choices=["once", "step"], default="step")
+    ap.add_argument("--teacher-ckpt", type=str, default=None,
+                    help="teacher checkpoint (default: TinyStories k256)")
+    ap.add_argument("--data-dir", type=str, default=None,
+                    help="token memmap dir (default: teacher repo data/)")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -107,7 +111,12 @@ def main():
     print(f"  steps={args.steps} batch={args.batch} ctx={args.ctx} "
           f"k_gen={args.k_gen} lr={args.lr:.0e} tau={args.tau}", flush=True)
 
-    th = TeacherHarness(device=device)
+    th_kw = {}
+    if args.teacher_ckpt:
+        th_kw["ckpt_path"] = os.path.expanduser(args.teacher_ckpt)
+    if args.data_dir:
+        th_kw["data_dir"] = os.path.expanduser(args.data_dir)
+    th = TeacherHarness(device=device, **th_kw)
     th.data.context_len = args.ctx
     # grad checkpointing recompute clashes with the generator call inside the
     # block (saved-tensor count mismatch); off — batch 2 x ctx 256 fits without it

@@ -75,6 +75,10 @@ def main():
     ap.add_argument("--no-wandb", action="store_true")
     ap.add_argument("--run-suffix", type=str, default="",
                     help="appended to run name/results dir (e.g. _hot10k)")
+    ap.add_argument("--teacher-ckpt", type=str, default=None,
+                    help="teacher checkpoint (default: TinyStories k256)")
+    ap.add_argument("--data-dir", type=str, default=None,
+                    help="token memmap dir (default: teacher repo data/)")
     args = ap.parse_args()
 
     arm = ARMS[args.arm]
@@ -93,7 +97,13 @@ def main():
     print(f"Stage 3 — arm={args.arm}  {arm}", flush=True)
     print(f"  warm start: {args.init_from}", flush=True)
 
-    th = TeacherHarness(device=device)
+    import os as _os
+    th_kw = {}
+    if args.teacher_ckpt:
+        th_kw["ckpt_path"] = _os.path.expanduser(args.teacher_ckpt)
+    if args.data_dir:
+        th_kw["data_dir"] = _os.path.expanduser(args.data_dir)
+    th = TeacherHarness(device=device, **th_kw)
     th.data.context_len = args.ctx
     th.model.grad_checkpoint = False
     th.model.eval()
