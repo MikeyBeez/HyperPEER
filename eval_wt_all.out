@@ -1,0 +1,12 @@
+STAGE wt_distill_k256/generator_checkpoint.pt
+  teacher (real PEER k256): CE=4.2102  ppl=67.370
+  student (generated):      CE=4.3402  ppl=76.724
+  delta: +0.1300 nats
+STAGE stage3_t1_control_wt_hot/ckpt_best.pt
+  teacher (real PEER k256): CE=4.2102  ppl=67.370
+  student (generated):      CE=4.3350  ppl=76.324
+  delta: +0.1248 nats
+STAGE stage3_t1_control_wt_anneal/ckpt_best.pt
+  teacher (real PEER k256): CE=4.2102  ppl=67.370
+  student (generated):      CE=4.3131  ppl=74.670
+  delta: +0.1029 nats
