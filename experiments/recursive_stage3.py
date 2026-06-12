@@ -129,6 +129,20 @@ def main():
                        "eval/teacher_ce_val": ev["teacher_ce"],
                        "eval/kl_to_teacher": ev["kl"]}, step=max(step, 1))
 
+    best_ce = float("inf")
+
+    def maybe_save_best(step, ev):
+        # Mikey's well-insurance: if a high lr ever bounces us past a good
+        # minimum, the best point visited stays recoverable.
+        nonlocal best_ce
+        if ev["student_ce"] < best_ce:
+            best_ce = ev["student_ce"]
+            torch.save({"step": step, "student_ce": best_ce,
+                        "generator_state_dict": generator.state_dict(),
+                        "generator_config": generator.config(),
+                        "arm": {**arm, "name": args.arm}, "args": vars(args)},
+                       results_dir / "ckpt_best.pt")
+
     do_eval(0, "step0-insertion")     # the warm-start-into-recursion bump
 
     g = torch.Generator().manual_seed(args.seed)
@@ -174,7 +188,16 @@ def main():
                   f"eta {(args.steps-step)/max(0.1,sps):.0f}s  skipped {skipped}", flush=True)
 
         if step % args.eval_every == 0 or step == args.steps:
-            do_eval(step, "train")
+            ev = evaluate(th, wrappers, args.eval_batches, args.batch)
+            print(f"  [eval @ {step} | train] student-CE={ev['student_ce']:.4f}  "
+                  f"teacher-CE={ev['teacher_ce']:.4f}  KL={ev['kl']:.4f}", flush=True)
+            with open(metrics_path, "a") as f:
+                f.write(json.dumps({"step": step, "tag": "train", **ev}) + "\n")
+            if wandb:
+                wandb.log({"eval/student_ce_val": ev["student_ce"],
+                           "eval/teacher_ce_val": ev["teacher_ce"],
+                           "eval/kl_to_teacher": ev["kl"]}, step=max(step, 1))
+            maybe_save_best(step, ev)
 
         if step in args.stamp_at or step == args.steps:
             p = results_dir / "generator_checkpoint.pt"
