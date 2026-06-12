@@ -1,0 +1,16 @@
+loaded generator from step 9900  config={'d_model': 384, 'n_layers': 6, 'k_gen': 256, 'latent_n': 16, 'latent_d': 512, 'n_cross': 2, 'n_self': 3}
+  10/100  teacher=2.3225  student=2.3166
+  20/100  teacher=2.2960  student=2.2900
+  30/100  teacher=2.2801  student=2.2775
+  40/100  teacher=2.2932  student=2.2888
+  50/100  teacher=2.3138  student=2.3086
+  60/100  teacher=2.3288  student=2.3243
+  70/100  teacher=2.3261  student=2.3212
+  80/100  teacher=2.3316  student=2.3258
+  90/100  teacher=2.3269  student=2.3213
+  100/100  teacher=2.3227  student=2.3179
+
+val over 100 batches x 2 x ctx 512:
+  teacher (real PEER k256): CE=2.3227  ppl=10.203
+  student (generated):      CE=2.3179  ppl=10.154
+  delta: -0.0049 nats
