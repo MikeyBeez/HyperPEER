@@ -45,4 +45,19 @@ What's next
 
 The WikiText rung. The teacher gets retrained on WikiText-103, the whole distill-then-hot-fine-tune pipeline reruns on a corpus with real entropy, and two questions get answered at once: whether generation holds its exchange rate when the tokens get hard, and whether the recursion null was really TinyStories being too easy. The teacher is training as I write this.
 
+Addendum: the student beats the teacher
+
+Between finishing this draft and publishing it, one more experiment ran, and it changes the ending.
+
+It started with a question about the hot schedule: after training at the high learning rate, did we ever lower the rate and keep going? We had not — each run's cosine decayed to zero and stopped. The intuition behind the question was a picture of the loss landscape: a high learning rate explores between basins but can bounce past a good minimum, and the run settles wherever it happens to be when the rate cools, not necessarily in the best well it visited. The trace of the hot run, checked afterward, didn't actually show a lost well — its best evaluation was its last — but the prescription the picture motivated was cheap to test: restart from the hot run's endpoint with a fresh, lower-peaked schedule, and add best-checkpoint saving so that if a better well is ever visited and lost again, it stays recoverable.
+
+The restart ran ten thousand steps with the rate peaking at a third of the hot run's. It descended almost immediately past everything in this article and kept going, ending at 2.3179 nats on the rigorous evaluation protocol — against the teacher's 2.3227. A fresh-seed confirmation on twice the data agreed: 2.3414 versus the teacher's 2.3473 on those batches, the student below the teacher by about six thousandths of a nat both times.
+
+Let me say plainly what that number means and doesn't mean. The generator — seventeen million parameters, holding no experts whatsoever — now scores better than the seventy-five-million-parameter retrieval bank it was distilled from. On the retrieval frontier it has passed sixteen retrieved experts per token and sits statistically even with thirty-two. The margin is about half a percent of perplexity, confirmed in sign across two independent evaluation seeds; it is small, and I will not pretend it is more than it is. It is also, as far as the question this series opened with is concerned, the answer crossing from "almost" to "yes": on this corpus, at this scale, you do not need the bank. Generating the experts is not just cheaper than storing them — trained patiently enough, it is better.
+
+The full recipe, end to end, every stage of which moved the number: distill the generator against the teacher with KL on the logits; fine-tune on next-token at a gentle rate; fine-tune again at a rate hot enough to escape the distilled solution; then anneal — restart at a lower peak and let it settle. Loss in nats at each stage: 2.371, 2.357, 2.337, 2.318, against a teacher at 2.323. Note that the model that did this is the plain single-pass generator. Recursion's null stands untouched; the teacher fell to a training schedule, not to a new architecture.
+
+The WikiText experiments, already running as this posts, will say whether any of it survives a corpus with real entropy. Part three will report either way.
+
+
 Code, logs, checkpoints, and every number: https://github.com/MikeyBeez/HyperPEER. Lineage as before — PEER from Xu Owen He at DeepMind, the generator recipe from Sakana AI's Text-to-LoRA and Doc-to-LoRA, recursion's framing owed to the TRM line of work, and the attribution discipline owed to every null result I have ever published.
