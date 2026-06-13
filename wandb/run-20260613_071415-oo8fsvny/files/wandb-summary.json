@@ -1,0 +1,1 @@
+{"_step":10000,"eval/teacher_ce_val":3.9562050998210907,"_runtime":6945.512229685,"eval/student_ce_val":4.158591866493225,"_wandb":{"runtime":6945},"train/lr":0,"train/ce":3.575392007827759,"eval/kl_to_teacher":0.22252771817147732,"_timestamp":1.7813598001226208e+09}

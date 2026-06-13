@@ -1,0 +1,56 @@
+{
+  "os": "Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39",
+  "python": "CPython 3.12.3",
+  "startedAt": "2026-06-12T17:58:16.858160Z",
+  "args": [
+    "--arm",
+    "t1_control",
+    "--init-from",
+    "results/wt_distill_k256/generator_checkpoint.pt",
+    "--steps",
+    "10000",
+    "--lr",
+    "6e-5",
+    "--warmup",
+    "500",
+    "--run-suffix",
+    "_wt_hot",
+    "--teacher-ckpt",
+    "/home/bard/Code/HN/peer-adaptive-k/checkpoints/wt_k256.pt",
+    "--data-dir",
+    "/home/bard/Code/HN/peer-adaptive-k/data_wikitext"
+  ],
+  "program": "-m experiments.recursive_stage3",
+  "git": {
+    "remote": "git@github.com:MikeyBeez/HyperPEER.git",
+    "commit": "8663d3f3dd8b08a446888d2e3bcf7d231488624c"
+  },
+  "email": "mbonsign@gmail.com",
+  "root": "/mnt/data/Code/HN/HyperPEER",
+  "host": "pop-os",
+  "executable": "/home/bard/Code/HN/peer-adaptive-k/.venv/bin/python",
+  "cpu_count": 6,
+  "cpu_count_logical": 12,
+  "gpu": "NVIDIA GeForce RTX 5070 Ti",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "481593462784",
+      "used": "43089768448"
+    }
+  },
+  "memory": {
+    "total": "33570021376"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA GeForce RTX 5070 Ti",
+      "memoryTotal": "17094934528",
+      "cudaCores": 8960,
+      "architecture": "Blackwell",
+      "uuid": "GPU-e11e9349-ebd9-48e9-10d2-7d57ffd730b5"
+    }
+  ],
+  "cudaVersion": "13.0",
+  "writerId": "9x6u7zd0c67487bck4mymkbo2vfedqa3"
+}

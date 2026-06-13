@@ -1,0 +1,1 @@
+{"train/kl":0.15282444655895233,"eval/val_kl":0.16793773882091045,"_wandb":{"runtime":21157},"train/lr":0,"train/grad_norm":5.497052192687988,"_timestamp":1.7813528506873424e+09,"eval/gap":-0.02161252684891224,"_step":30000,"eval/student_ce_val":3.7624306976795197,"eval/train_kl":0.1895502656698227,"_runtime":21157.25664348,"eval/teacher_ce_val":3.5485295355319977}

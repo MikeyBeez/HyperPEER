@@ -1,0 +1,117 @@
+_wandb:
+    value:
+        cli_version: 0.27.2
+        e:
+            nwfo4r6yfsb4cfvyo5nkbzzcya94hh5b:
+                args:
+                    - --steps
+                    - "20000"
+                    - --latent-n
+                    - "16"
+                    - --latent-d
+                    - "512"
+                    - --n-cross
+                    - "2"
+                    - --n-self
+                    - "3"
+                    - --lr
+                    - "3e-5"
+                    - --warmup
+                    - "500"
+                    - --teacher-ckpt
+                    - /home/bard/Code/HN/peer-adaptive-k/checkpoints/wt_k256.pt
+                    - --data-dir
+                    - /home/bard/Code/HN/peer-adaptive-k/data_wikitext
+                    - --run-name
+                    - wt_distill_k256
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "481593462784"
+                        used: "43089293312"
+                email: mbonsign@gmail.com
+                executable: /home/bard/Code/HN/peer-adaptive-k/.venv/bin/python
+                git:
+                    commit: b1f0e87be63bc4a5e2df6268ea37ca0f269eb6e6
+                    remote: git@github.com:MikeyBeez/HyperPEER.git
+                gpu: NVIDIA GeForce RTX 5070 Ti
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 8960
+                      memoryTotal: "17094934528"
+                      name: NVIDIA GeForce RTX 5070 Ti
+                      uuid: GPU-e11e9349-ebd9-48e9-10d2-7d57ffd730b5
+                host: pop-os
+                memory:
+                    total: "33570021376"
+                os: Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39
+                program: -m experiments.distill_stage1
+                python: CPython 3.12.3
+                root: /mnt/data/Code/HN/HyperPEER
+                startedAt: "2026-06-12T13:59:12.663285Z"
+                writerId: nwfo4r6yfsb4cfvyo5nkbzzcya94hh5b
+        m: []
+        python_version: 3.12.3
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+            "4": 3.12.3
+            "5": 0.27.2
+            "12": 0.27.2
+            "13": linux-x86_64
+batch:
+    value: 2
+ckpt_every:
+    value: 1000
+ctx:
+    value: 256
+data_dir:
+    value: /home/bard/Code/HN/peer-adaptive-k/data_wikitext
+eval_batches:
+    value: 8
+eval_every:
+    value: 250
+init_from:
+    value: null
+k_gen:
+    value: 256
+latent_d:
+    value: 512
+latent_n:
+    value: 16
+log_every:
+    value: 25
+lr:
+    value: 3e-05
+n_cross:
+    value: 2
+n_self:
+    value: 3
+no_wandb:
+    value: false
+rederive:
+    value: step
+run_name:
+    value: wt_distill_k256
+seed:
+    value: 1337
+steps:
+    value: 20000
+t_steps:
+    value: 1
+tau:
+    value: 1
+teacher_ckpt:
+    value: /home/bard/Code/HN/peer-adaptive-k/checkpoints/wt_k256.pt
+warmup:
+    value: 500

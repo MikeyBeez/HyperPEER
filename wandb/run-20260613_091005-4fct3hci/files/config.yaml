@@ -1,0 +1,107 @@
+_wandb:
+    value:
+        cli_version: 0.27.2
+        e:
+            f9bzo6pxyh4dhlvukkrc55lmyazjdrl9:
+                args:
+                    - --arm
+                    - t1_control
+                    - --steps
+                    - "10000"
+                    - --lr
+                    - "2e-5"
+                    - --warmup
+                    - "200"
+                    - --init-from
+                    - results/stage3_t1_control_wt2hot/ckpt_best.pt
+                    - --run-suffix
+                    - _wt2anneal
+                    - --teacher-ckpt
+                    - /home/bard/Code/HN/peer-adaptive-k/checkpoints/wt_k256_long.pt
+                    - --data-dir
+                    - /home/bard/Code/HN/peer-adaptive-k/data_wikitext
+                cpu_count: 6
+                cpu_count_logical: 12
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "481593462784"
+                        used: "43074801664"
+                email: mbonsign@gmail.com
+                executable: /home/bard/Code/HN/peer-adaptive-k/.venv/bin/python
+                git:
+                    commit: 0164ff4a3f34a26ea5cdfc829aa2947971f17d8c
+                    remote: git@github.com:MikeyBeez/HyperPEER.git
+                gpu: NVIDIA GeForce RTX 5070 Ti
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Blackwell
+                      cudaCores: 8960
+                      memoryTotal: "17094934528"
+                      name: NVIDIA GeForce RTX 5070 Ti
+                      uuid: GPU-e11e9349-ebd9-48e9-10d2-7d57ffd730b5
+                host: pop-os
+                memory:
+                    total: "33570021376"
+                os: Linux-6.18.7-76061807-generic-x86_64-with-glibc2.39
+                program: -m experiments.recursive_stage3
+                python: CPython 3.12.3
+                root: /mnt/data/Code/HN/HyperPEER
+                startedAt: "2026-06-13T14:10:05.959919Z"
+                writerId: f9bzo6pxyh4dhlvukkrc55lmyazjdrl9
+        m: []
+        python_version: 3.12.3
+        t:
+            "1":
+                - 1
+            "2":
+                - 1
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+            "4": 3.12.3
+            "5": 0.27.2
+            "12": 0.27.2
+            "13": linux-x86_64
+arm:
+    value: t1_control
+batch:
+    value: 2
+ctx:
+    value: 256
+data_dir:
+    value: /home/bard/Code/HN/peer-adaptive-k/data_wikitext
+eval_batches:
+    value: 8
+eval_every:
+    value: 100
+init_from:
+    value: results/stage3_t1_control_wt2hot/ckpt_best.pt
+log_every:
+    value: 25
+lr:
+    value: 2e-05
+no_wandb:
+    value: false
+noise_std:
+    value: 0
+rederive:
+    value: step
+run_suffix:
+    value: _wt2anneal
+seed:
+    value: 1337
+stamp_at:
+    value:
+        - 2500
+        - 5000
+steps:
+    value: 10000
+t_steps:
+    value: 1
+teacher_ckpt:
+    value: /home/bard/Code/HN/peer-adaptive-k/checkpoints/wt_k256_long.pt
+warmup:
+    value: 200
