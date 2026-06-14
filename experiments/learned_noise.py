@@ -62,6 +62,52 @@ class NoiseHead(nn.Module):
         return unit * mag
 
 
+class NoiseHeadVar(nn.Module):
+    """Variational noise head: learns the per-dim MEAN and VARIANCE of the
+    inter-step perturbation (in units of RMS(u)), with a KL term pulling the
+    posterior toward a prior N(0, target_std^2). The KL is what stops the
+    magnitude from collapsing to zero under next-token loss; the balance between
+    NTP (wants sigma -> 0) and KL (wants sigma -> target_std) is set by the KL
+    weight beta in the runner. So this head gets to CHOOSE how much noise to
+    inject, unlike NoiseHead which has the energy forced.
+
+    Init starts exactly at the prior (mean 0, sigma = target_std), so at launch
+    the perturbation is identical to the isotropic control and KL == 0; the head
+    then moves sigma/mean from there.
+
+    forward returns (delta_in_u_units, kl_mean, sigma_mean_detached).
+    """
+
+    def __init__(self, d_model, hidden=None, target_std=0.02):
+        super().__init__()
+        hidden = hidden or d_model
+        self.in_norm = nn.LayerNorm(d_model)
+        self.fc1 = nn.Linear(d_model, hidden)
+        self.act = nn.GELU()
+        self.mu = nn.Linear(hidden, d_model)
+        self.lv = nn.Linear(hidden, d_model)
+        nn.init.zeros_(self.mu.weight)
+        nn.init.zeros_(self.mu.bias)
+        nn.init.zeros_(self.lv.weight)
+        # start log-variance at the prior so launch == isotropic target_std noise
+        self.log_prior_var = 2.0 * math.log(target_std)
+        nn.init.constant_(self.lv.bias, self.log_prior_var)
+
+    def forward(self, u, target_std):
+        rms = u.pow(2).mean(dim=-1, keepdim=True).sqrt()          # [b, n, 1]
+        z = self.act(self.fc1(self.in_norm(u)))
+        m = self.mu(z)                                            # normalized mean (0 at init)
+        lv = self.lv(z).clamp(-12.0, 2.0)                         # normalized log-variance
+        std = torch.exp(0.5 * lv)
+        eps = torch.randn_like(u)
+        pert_norm = m + std * eps                                 # perturbation / RMS(u)
+        delta = pert_norm * rms                                   # back to u units
+        # KL(N(m, std^2) || N(0, target_std^2)) per dim, in normalized units
+        pv = self.log_prior_var
+        kl = 0.5 * (torch.exp(lv - pv) + (m * m) / math.exp(pv) - 1.0 - (lv - pv))
+        return delta, kl.mean(), std.mean().detach()
+
+
 class RecursiveNoiseFFN(nn.Module):
     """Same recursion cell as src.generator.RecursiveGeneratedFFN, plus a
     pluggable inter-step noise mode: 'none' | 'iso' | 'learned'.
@@ -89,6 +135,8 @@ class RecursiveNoiseFFN(nn.Module):
         self.target_std = target_std
         self.grad_ckpt = grad_ckpt
         self.use_generated = False
+        self._last_kl = None        # set each forward when noise_mode == 'learned_var'
+        self._last_sigma = None
         # plain attributes, NOT submodules: generator + head are optimized
         # outside the frozen base model (exactly like D2L's Perceiver).
         object.__setattr__(self, "_generator", generator)
@@ -118,6 +166,11 @@ class RecursiveNoiseFFN(nn.Module):
                     u = u + torch.randn_like(u) * (self.target_std * rms)
                 elif self.noise_mode == "learned":
                     u = u + self._noise_head(u, self.target_std)
+                elif self.noise_mode == "learned_var":
+                    delta, kl, sigma = self._noise_head(u, self.target_std)
+                    u = u + delta
+                    self._last_kl = kl
+                    self._last_sigma = sigma
                 else:
                     raise ValueError(f"unknown noise_mode {self.noise_mode}")
         return u - x, {}

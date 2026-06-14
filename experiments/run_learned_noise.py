@@ -37,14 +37,18 @@ import torch
 from src.harness import TeacherHarness
 from src.generator import ExpertGenerator, set_generated
 from experiments.distill_stage1 import kl_loss
-from experiments.learned_noise import NoiseHead, install_recursive_noise_ffn
+from experiments.learned_noise import (
+    NoiseHead, NoiseHeadVar, install_recursive_noise_ffn)
 
-# noise_mode: none | iso | learned ; needs_head True only for learned
+# noise_mode: none | iso | learned | learned_var ; needs_head True for learned*
 ARMS = {
-    "t1_control":  {"t_steps": 1, "rederive": "step", "noise_mode": "none",    "needs_head": False},
-    "rederive":    {"t_steps": 2, "rederive": "step", "noise_mode": "none",    "needs_head": False},
-    "iso_step":    {"t_steps": 2, "rederive": "step", "noise_mode": "iso",     "needs_head": False},
-    "learned_dir": {"t_steps": 2, "rederive": "step", "noise_mode": "learned", "needs_head": True},
+    "t1_control":  {"t_steps": 1, "rederive": "step", "noise_mode": "none",        "needs_head": False},
+    "rederive":    {"t_steps": 2, "rederive": "step", "noise_mode": "none",        "needs_head": False},
+    "iso_step":    {"t_steps": 2, "rederive": "step", "noise_mode": "iso",         "needs_head": False},
+    "learned_dir": {"t_steps": 2, "rederive": "step", "noise_mode": "learned",     "needs_head": True},
+    # variational: head learns mean+variance of the noise; KL (weight --beta)
+    # keeps the magnitude from collapsing. Lets the model CHOOSE how much noise.
+    "learned_var": {"t_steps": 2, "rederive": "step", "noise_mode": "learned_var", "needs_head": True},
 }
 
 TRAILING_WINDOW = 200
@@ -79,6 +83,8 @@ def main():
     ap.add_argument("--ctx", type=int, default=256)
     ap.add_argument("--lr", type=float, default=6e-5)
     ap.add_argument("--target-std", type=float, default=0.02)
+    ap.add_argument("--beta", type=float, default=0.1,
+                    help="KL weight for learned_var arm (0 => noise collapses to ~0)")
     ap.add_argument("--warmup", type=int, default=100)
     ap.add_argument("--log-every", type=int, default=25)
     ap.add_argument("--eval-every", type=int, default=200)
@@ -123,7 +129,10 @@ def main():
     d_model = generator.d_model
     print(f"  generator from step {ck['step']}  d_model={d_model}", flush=True)
 
-    noise_head = NoiseHead(d_model).to(device).float()
+    if arm["noise_mode"] == "learned_var":
+        noise_head = NoiseHeadVar(d_model, target_std=args.target_std).to(device).float()
+    else:
+        noise_head = NoiseHead(d_model).to(device).float()
 
     wrappers = install_recursive_noise_ffn(
         th.model, generator, noise_head,
@@ -182,6 +191,13 @@ def main():
         th.model.eval()
         loss = th.model(x, targets=y)["loss"]
         set_generated(wrappers, False)
+        ce_only = float(loss.detach().item())
+        kl_val, sigma_val = 0.0, float("nan")
+        if arm["noise_mode"] == "learned_var":
+            kl = sum(w._last_kl for w in wrappers) / len(wrappers)
+            loss = loss + args.beta * kl
+            kl_val = float(kl.detach().item())
+            sigma_val = float(sum(w._last_sigma for w in wrappers) / len(wrappers))
 
         if not torch.isfinite(loss):
             optimizer.zero_grad(set_to_none=True)
@@ -201,17 +217,20 @@ def main():
         scheduler.step()
         consec = 0
         step += 1
-        lv = float(loss.detach().item())
+        lv = ce_only                       # report CE only (KL excluded from the headline)
         trailing.append(lv)
         if wandb:
             wandb.log({"train/ce": lv, "train/lr": scheduler.get_last_lr()[0]}, step=step)
 
         if step % args.log_every == 0:
             sps = step / max(1.0, time.time() - t0)
+            extra = ""
+            if arm["noise_mode"] == "learned_var":
+                extra = f"  sigma={sigma_val:.4f} (prior {args.target_std})  KL={kl_val:.3f}"
             print(f"  step {step:6d}/{args.steps}  ce={lv:7.4f}  "
                   f"trail={sum(trailing)/len(trailing):7.4f}  "
                   f"lr={scheduler.get_last_lr()[0]:.1e}  {sps:.2f} step/s  "
-                  f"eta {(args.steps-step)/max(0.1,sps):.0f}s  skipped {skipped}", flush=True)
+                  f"eta {(args.steps-step)/max(0.1,sps):.0f}s  skipped {skipped}{extra}", flush=True)
 
         if step % args.eval_every == 0 or step == args.steps:
             log_eval(step, "train")
