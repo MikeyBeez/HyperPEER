@@ -1,0 +1,55 @@
+HyperPEER, Part Four: The Recursion That Wasn't
+
+A clean negative result about making a small model think twice
+
+
+The seductive idea
+
+Here is a thought that is very hard to let go of once you have it. We have a small model that generates its own feed-forward weights, fresh for every token, from that token's hidden state. One pass through the layer means: read the hidden state, conjure a set of expert weights, apply them, move on. So what happens if you do it twice? Take the output of the first pass, feed it back in, conjure a new set of weights from the updated state, apply those too. Two sequential applications instead of one. The model gets to look at its own first answer and revise it before committing.
+
+If that worked, it would be a lovely thing. It would mean a small model could buy capability with time instead of parameters. You would not need a bigger network; you would need the same network run as a short loop. It is the same intuition behind chain-of-thought, behind iterative refinement, behind every "let the model think a little longer" trick that has ever paid off. Applied inside a single layer, per token, it promised something close to depth on demand.
+
+This is the story of testing that idea carefully, three times, and watching it come back empty every time. It is a negative result. I am writing it up precisely because the intuition is so strong that the field will keep rediscovering it, and it is worth having a careful account of what happens when you actually run the control.
+
+
+What recursion means here, concretely
+
+The recursion is a within-layer loop. Writing u for the running hidden state, one micro-step is u becomes u plus FFN of the normalized u, where FFN means "generate expert weights from this state, then apply them." With one micro-step that is just the ordinary layer. With two, the important design choice is whether you regenerate the weights for the second step or reuse the first step's weights. Reusing them is activation-space recursion: same function, applied twice. Regenerating them from the evolved state is function-space recursion: a genuinely new function, conditioned on what the first pass produced. The second one is the real hypothesis, because that is the version where the model could compute something a single pass cannot. That arm is the one I will call recursion below.
+
+Everything is measured in cross-entropy, which is just the average surprise per token in nats, and its exponential, perplexity, which you can read as the effective number of words the model feels it is choosing among. Lower is better on both. On the corpus we will get to, the teacher sits around perplexity 42, meaning it narrows each next word down to roughly 42-ish live options; our small student sits around 52. A tenth of a nat is a real gap; a hundredth is close to the edge of what a careful evaluation can even see.
+
+
+The discipline that makes a null trustworthy
+
+The trap with an idea this appealing is that you can almost always make it look like it works. Add a second pass, train a bit more, and the loss goes down. Declare victory. But the second pass came bundled with extra training, and often a higher learning rate, and those alone lower the loss. The apparent win belongs to the training, not the recursion.
+
+So before any of this we pre-registered a rule and a control. The rule: recursion only counts as a win if the two-pass model beats the one-pass model by at least one hundredth of a nat, a real and visible margin, not a rounding artifact. The control: the matched-heat arm, which is the one-pass model trained with exactly the same number of steps and the same learning rate as the two-pass model. If recursion is doing something, it has to beat that, not beat the untrained starting point. Writing the threshold down in advance is the whole game. It is what stops you from drawing the line around wherever your result happened to land.
+
+
+Three swings
+
+The first swing was on TinyStories, a small synthetic corpus. The two-pass model looked good until we ran the matched control, and then the gap closed to nothing. The one-pass model trained for the same budget scored a hair better than the two-pass model. The entire apparent recursion benefit had been the extra training at a higher learning rate. Null, exactly as the pre-registered control was built to catch.
+
+There was an honest escape hatch, and we took it seriously. TinyStories is easy. Its teacher sits very near the entropy floor of the corpus, the point past which there is simply nothing left to predict. Maybe recursion was null not because the idea is wrong but because there was no headroom, no second reasoning step left to take, because the first pass already mopped up everything the data had to offer. The only way to know was to move to a harder corpus and give the teacher enough training to actually converge, so that a real gap exists for a second pass to chew on.
+
+So the second and third swings were on WikiText, real Wikipedia prose, with a teacher trained to convergence at perplexity 42. Here there is genuine headroom: the student sits about two tenths of a nat above the teacher, a real and unclosed gap. If recursion was ever going to help, this is where it would, because there is finally something for the second pass to do.
+
+It did not. The one-pass control scored cross-entropy 3.9493, a perplexity of about 51.9. The two-pass recursion scored 3.9505, a perplexity of about 52.0. The recursion is worse by twelve ten-thousandths of a nat. Not better by a hundredth, which was the bar; worse by an amount you can barely measure, while costing twice the inference compute. The escape hatch is closed. Recursion is null on the easy corpus and null on the hard one with room to spare.
+
+
+The last objection, and the noise coda
+
+There is one more thing a careful skeptic would say. Maybe the second pass is null because it is redundant by construction: handed the same state, it recomputes roughly the same answer. Give it something different to work on and it might earn its keep. The way you do that is to perturb the state between the two passes, so the second pass is denoising or correcting rather than repeating.
+
+An early version of this used plain isotropic noise, a random nudge of fixed size in a random direction, and it did nothing, or slightly hurt. But that is a dumb perturbation. The sharper version, which a collaborator proposed, is to let a small head learn what noise to produce, so the perturbation lands in directions the second pass can actually use. We built that. To keep it honest we fixed the energy of the perturbation to match the isotropic control, two percent of the state's magnitude, and let the head learn only the direction. That isolates the one variable that matters: at the same noise budget, does a learned direction beat a random one?
+
+It does, barely, and that is the most interesting small thing in the whole study. At matched budget the random-noise arm scored 3.9686, the learned-noise arm 3.9649, and the no-noise baseline 3.9637. So the learned direction beat random noise by about four thousandths of a nat. The head genuinely learned to place the perturbation more gracefully than chance. But look at where it landed: right back at the no-noise level. The learned head did not find a useful direction for the second pass to exploit. It found a harmless one. Given the freedom to make the second pass different, the best it could do was make it not worse. There was no helpful different thing to compute, only a less damaging way to be perturbed.
+
+I should be square about precision here: those last gaps are a few thousandths of a nat, measured over a few dozen sequences, which is near the noise floor of the evaluation. The ordering is suggestive, not carved in stone. But the direction of the story is the same as everything above it, and it is the same story the matched control told on TinyStories: the first pass already extracts what this layer can extract.
+
+
+What the negative is worth
+
+The clean statement is this. Within-layer recursion of a generated-weight feed-forward network, at this scale, has no headroom. A second sequential pass, whether it reuses the first pass's weights or regenerates new ones, whether it runs on the clean state or a randomly perturbed one or a cleverly perturbed one, does not beat simply training the single pass for the same budget. The intuition that a small model can buy capability by thinking twice in place is, here, just wrong, and it is wrong in a way that survives a converged teacher, a hard corpus, a pre-registered threshold, a matched control, and a learned attempt to manufacture the headroom by hand.
+
+That is a result worth publishing exactly because the idea is so attractive. Recursion-in-place feels like free depth. It is the kind of thing you want to be true. The contribution of a study like this is not a new trick; it is a carefully fenced piece of ground with a sign on it that says the obvious thing here does not work, and here is precisely how we checked. The next person with the same beautiful idea gets to start from the control instead of the hope.
